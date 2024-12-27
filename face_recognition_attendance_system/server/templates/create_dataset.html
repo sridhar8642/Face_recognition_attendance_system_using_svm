@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Dataset with TensorFlow.js</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+    <style>
+        #camera {
+            position: relative;
+        }
+        #videoElement, #canvasOverlay {
+            position: absolute;
+            top: 100px;
+            left: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white text-center">
+                        <h2>Create Dataset</h2>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="/upload_dataset" id="datasetForm">
+                            <div class="form-group">
+                                <label for="name">Name</label>
+                                <input type="text" class="form-control" id="name" name="name" required placeholder="Enter your name">
+                            </div>
+                            <div class="form-group">
+                                <label for="roll_number">Roll Number</label>
+                                <input type="text" class="form-control" id="roll_number" name="roll_number" required placeholder="Enter your roll number">
+                            </div>
+                            <button type="button" class="btn btn-primary btn-block" onclick="startCapturing()">Start Capturing</button>
+                        </form>
+                        <div id="camera">
+                            <video id="videoElement" width="100%" height="auto" autoplay></video>
+                            <canvas id="canvasOverlay"></canvas>
+                        </div>
+                        <div id="status"></div>
+                    </div>
+                    <div class="text-center mt-3">
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">Back to Home</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let video = document.getElementById("videoElement");
+        let canvasOverlay = document.getElementById("canvasOverlay");
+        let contextOverlay = canvasOverlay.getContext("2d");
+        let capturedImages = [];
+        let totalCaptures = 0;
+        let blazefaceModel;
+
+        // Load the BlazeFace model
+        async function loadBlazeFaceModel() {
+            blazefaceModel = await blazeface.load();
+            console.log("BlazeFace model loaded");
+        }
+
+        // Start the camera
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    canvasOverlay.width = video.videoWidth;
+                    canvasOverlay.height = video.videoHeight;
+                };
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                alert("Camera access failed: " + err.message);
+            }
+        }
+
+        // Initialize the camera and load the model
+        loadBlazeFaceModel();
+        startCamera();
+
+        // Start capturing face images
+        function startCapturing() {
+            let name = document.getElementById('name').value;
+            let roll_number = document.getElementById('roll_number').value;
+
+            if (!name || !roll_number) {
+                alert("Please enter your name and roll number.");
+                return;
+            }
+
+            capturedImages = [];
+            totalCaptures = 0;
+
+            captureImages(name, roll_number);
+        }
+
+        // Capture images
+        async function captureImages(name, roll_number) {
+            if (totalCaptures < 50) {
+                contextOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
+                contextOverlay.drawImage(video, 0, 0, canvasOverlay.width, canvasOverlay.height);
+
+                // Detect faces using BlazeFace
+                const predictions = await blazefaceModel.estimateFaces(video, false);
+                for (let prediction of predictions) {
+                    const start = prediction.topLeft;
+                    const end = prediction.bottomRight;
+                    const size = [end[0] - start[0], end[1] - start[1]];
+
+                    contextOverlay.strokeStyle = "green";
+                    contextOverlay.lineWidth = 2;
+                    contextOverlay.strokeRect(start[0], start[1], size[0], size[1]);
+
+                    const faceCanvas = document.createElement("canvas");
+                    faceCanvas.width = size[0];
+                    faceCanvas.height = size[1];
+                    const faceContext = faceCanvas.getContext("2d");
+                    faceContext.drawImage(video, start[0], start[1], size[0], size[1], 0, 0, faceCanvas.width, faceCanvas.height);
+
+                    const dataURL = faceCanvas.toDataURL("image/png");
+                    capturedImages.push(dataURL);
+                    totalCaptures++;
+                    document.getElementById("status").innerHTML = `Captured: ${totalCaptures}/50`;
+                }
+                setTimeout(() => captureImages(name, roll_number), 200);
+            } else {
+                uploadImages(name, roll_number);
+            }
+        }
+
+        // Upload captured images
+        async function uploadImages(name, roll_number) {
+            const formData = new FormData();
+            formData.append("name", name);
+            formData.append("roll_number", roll_number);
+
+            capturedImages.forEach((image, index) => {
+                formData.append(`image_${index}`, image);
+            });
+
+            try {
+                const response = await fetch('/upload_dataset', { method: 'POST', body: formData });
+                if (response.ok) {
+                    alert("Dataset upload successful!");
+                    document.getElementById("status").innerHTML = "Dataset uploaded successfully!";
+                } else {
+                    alert("Error uploading dataset!");
+                }
+            } catch (err) {
+                console.error("Error uploading images:", err);
+                alert("Error uploading dataset!");
+            }
+        }
+    </script>
+</body>
+</html>
