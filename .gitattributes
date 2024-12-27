@@ -1,0 +1,2 @@
+accuracy_cal/model/shape_predictor_68_face_landmarks.dat filter=lfs diff=lfs merge=lfs -text
+face_recognition_attendance_system.zip filter=lfs diff=lfs merge=lfs -text
